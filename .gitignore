@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+kanban-data*.json
+kanban-state*.json
+kanban-view*.json
+device-id
+*.zip
+*.app/
