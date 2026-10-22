@@ -121,7 +121,7 @@ npm test
 npx --yes electron@45.0.0 .
 ```
 
-Mac 双击 `制作Mac版.command`，Windows 双击 `制作Windows版.cmd`，可下载 Electron 官方最新稳定运行时并校验 SHA-256，再生成对应平台的程序。脚本制作版本所用运行时可能与 Releases 不同。
+Mac 在源码目录运行 `bash scripts/build-mac.sh`；Windows 双击 `制作Windows版.cmd`。制作脚本会下载 Electron 官方最新稳定运行时并校验 SHA-256，再生成对应平台的程序。脚本制作版本所用运行时可能与 Releases 不同。
 
 ## 当前版本
 
