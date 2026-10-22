@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+task_source_root="$(cd "$(dirname "$0")/.." && pwd)"
+task_stage_root="$(mktemp -d "${TMPDIR:-/tmp}/kanban-build.XXXXXX")"
+trap 'rm -rf "$task_stage_root"' EXIT
+task_arch="$(uname -m)"
+if [ "$task_arch" = x86_64 ]; then task_arch=x64; fi
+task_version="$(/usr/bin/curl -fsSL -H 'User-Agent: ProjectProgressKanban-LocalBuild' https://api.github.com/repos/electron/electron/releases/latest | /usr/bin/plutil -extract tag_name raw -o - -)"
+if ! [[ "$task_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo 'Unable to determine a stable runtime version.'; exit 1; fi
+task_asset="electron-${task_version}-darwin-${task_arch}.zip"
+task_base="https://github.com/electron/electron/releases/download/${task_version}"
+echo "Downloading ${task_asset} ..."
+/usr/bin/curl -fL "$task_base/$task_asset" -o "$task_stage_root/runtime.zip"
+/usr/bin/curl -fsSL "$task_base/SHASUMS256.txt" -o "$task_stage_root/checksums.txt"
+task_expected="$(/usr/bin/awk -v asset="$task_asset" '{ name=$2; sub(/^\*/, "", name); if(name==asset) print $1 }' "$task_stage_root/checksums.txt")"
+task_actual="$(/usr/bin/shasum -a 256 "$task_stage_root/runtime.zip" | /usr/bin/awk '{print $1}')"
+if [ -z "$task_expected" ] || [ "$task_expected" != "$task_actual" ]; then echo 'Runtime checksum verification failed.'; exit 1; fi
+/usr/bin/ditto -x -k "$task_stage_root/runtime.zip" "$task_stage_root/runtime"
+task_app="$(dirname "$task_source_root")/ProjectProgressKanban-Mac-${task_version}-$(date +%Y%m%d-%H%M%S).app"
+/usr/bin/ditto "$task_stage_root/runtime/Electron.app" "$task_app"
+mkdir -p "$task_app/Contents/Resources/app"
+cp "$task_source_root/package.json" "$task_app/Contents/Resources/app/"
+cp -R "$task_source_root/app" "$task_app/Contents/Resources/app/"
+cp "$task_source_root/app/kanban.icns" "$task_app/Contents/Resources/kanban.icns"
+mkdir -p "$task_app/Contents/Resources/runtime-licenses"
+cp "$task_stage_root/runtime/LICENSE" "$task_app/Contents/Resources/runtime-licenses/"
+cp "$task_stage_root/runtime/LICENSES.chromium.html" "$task_app/Contents/Resources/runtime-licenses/"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleName 项目进度看板' "$task_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName 项目进度看板' "$task_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.project-progress-kanban' "$task_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile kanban.icns' "$task_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.1.0' "$task_app/Contents/Info.plist"
+/usr/bin/codesign --force --deep --sign - --preserve-metadata=entitlements,flags "$task_app"
+echo "Ready: $task_app"
+/usr/bin/open -R "$task_app"
