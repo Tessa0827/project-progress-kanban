@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 task_source_root="$(cd "$(dirname "$0")/.." && pwd)"
+task_app_version="$(/usr/bin/plutil -extract version raw -o - "$task_source_root/package.json")"
 task_stage_root="$(mktemp -d "${TMPDIR:-/tmp}/kanban-build.XXXXXX")"
 trap 'rm -rf "$task_stage_root"' EXIT
 task_arch="$(uname -m)"
@@ -29,7 +30,7 @@ cp "$task_stage_root/runtime/LICENSES.chromium.html" "$task_app/Contents/Resourc
 /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName 项目进度看板' "$task_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier local.project-progress-kanban' "$task_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile kanban.icns' "$task_app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.1.0' "$task_app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $task_app_version" "$task_app/Contents/Info.plist"
 /usr/bin/codesign --force --deep --sign - --preserve-metadata=entitlements,flags "$task_app"
 echo "Ready: $task_app"
 /usr/bin/open -R "$task_app"
