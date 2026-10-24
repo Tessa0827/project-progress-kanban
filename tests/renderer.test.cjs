@@ -13,14 +13,16 @@ function setup(native = false, payload = null, view = null) {
   const elements = new Map(), storage = new Map(view ? [['kanban-view-v1', JSON.stringify(view)]] : []), handlers = {}, nativeCalls = [];
   let stored = payload;
   function element(id) {
-    if (!elements.has(id)) elements.set(id, { id, innerHTML: '', textContent: '', value: '', hidden: true, title: '', dataset: {}, style: {}, attributes: {}, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll() { return []; }, querySelector(selector) { return element(id + ' ' + selector); }, addEventListener(type, fn) { handlers[id + ':' + type] = fn; }, appendChild() {}, focus() {}, click() { this.onclick?.(); }, setAttribute(name, value) { this.attributes[name] = value; } });
+    if (!elements.has(id)) elements.set(id, { id, innerHTML: '', textContent: '', value: '', hidden: true, title: '', dataset: {}, style: {}, attributes: {}, classList: { add() {}, remove() {}, toggle() {} }, closest(selector) { return element(id+' closest '+selector); }, querySelectorAll() { return []; }, querySelector(selector) { return element(id + ' ' + selector); }, addEventListener(type, fn) { handlers[id + ':' + type] = fn; }, after() {}, appendChild() {}, focus() {}, click() { this.onclick?.(); }, setAttribute(name, value) { this.attributes[name] = value; } });
     return elements.get(id);
   }
   const document = { documentElement: { dataset: {}, style:{setProperty(){}} }, getElementById: element, createElement: tag => element('created ' + tag), querySelectorAll: () => [], querySelector: selector => element(selector), addEventListener(type, fn) { (handlers[type] ||= []).push(fn); }, activeElement: null };
   const bridge = { platform: 'darwin', loadState: () => ({ ok: true, value: { state: stored, deviceId: 'mac', dataPath: '/local/kanban-data.json' } }), saveState(state) { stored = JSON.parse(JSON.stringify(state)); nativeCalls.push('save'); return { ok: true }; }, chooseFiles: async () => ({ ok: true, value: [] }), openFile: async () => ({ ok: true, value: null }), revealFile: async () => ({ ok: true, value: null }), importData: async () => ({ ok: true, value: null }), exportData: async () => ({ ok: true, value: null }) };
   const celebrations=[];
   const window = { kanbanPersonalUI:{installMotion(){},installSelectControls(){},showProjectCelebration(projects){celebrations.push(projects);}}, addEventListener() {}, ...(native ? { kanbanDesktop: bridge } : {}) };
-  const ctx = vm.createContext({ document, window, localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) }, setTimeout: () => 1, clearTimeout() {}, confirm: () => true, structuredClone, crypto: crypto.webcrypto, Blob, URL, console });
+  const ctx = vm.createContext({ document, window, localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) }, setTimeout: () => 1, clearTimeout() {}, confirm: () => true, structuredClone, crypto: crypto.webcrypto, Blob, URL, console, queueMicrotask:fn=>fn() });
+  vm.runInContext(scripts[0],ctx);
+  Object.assign(window.kanbanPersonalUI,{installMotion(){},installSelectControls(){},installDateControls(){},installBoardTools(){},installProjectOrder(){},createTaskCelebration(){return {start(tasks){celebrations.push(tasks);},stop(){},reconcile(){}};}});
   vm.runInContext(code, ctx);
   return { run: value => vm.runInContext(value, ctx), ctx, element, bridge, storage, handlers, nativeCalls, celebrations, stored: () => stored };
 }
@@ -31,13 +33,21 @@ test('Native initialization persists to disk and explicitly reports local-machin
   a.run('state.tasks[0].desc="刚写的备注";markDirty()'); const b = setup(true, a.stored()); assert.equal(b.run('state.tasks[0].desc'), '刚写的备注');
 });
 
-test('Celebration occurs only when the whole project is complete and local save succeeded', () => {
-  const a=setup(true),before=a.run('JSON.stringify(state)');
-  a.run('celebrateTask(state.tasks[0])');assert.equal(a.celebrations.length,0);
-  a.run('state.tasks.filter(t=>t.projectId===state.tasks[0].projectId).forEach(t=>t.progress=100);markDirty();celebrateTask(state.tasks[0])');
-  assert.equal(a.celebrations.length,1);assert.equal(a.celebrations[0][0].id,'p1');
-  a.run('desktopSaveError="disk full";celebrateTask(state.tasks[0])');assert.equal(a.celebrations.length,1);
+test('Task completion celebrates once after persistence and never on initial load or failed save', () => {
+  const a=setup(true);assert.equal(a.celebrations.length,0);
+  a.run('state.tasks[0].status="done";state.tasks[0].progress=100;markDirty()');assert.equal(a.celebrations.length,1);
+  a.run('markDirty()');assert.equal(a.celebrations.length,1);
+  const b=setup(true,a.stored());assert.equal(b.celebrations.length,0);
+  b.bridge.saveState=()=>({ok:false,error:'disk full'});
+  b.run('state.tasks[1].status="done";state.tasks[1].progress=100;markDirty()');assert.equal(b.celebrations.length,0);
   assert.ok(!html.includes('id="projectLife"'));assert.ok(!html.includes('class="column-colors"'));
+});
+test('Custom workflow, completion undo, arbitrary colors and file references survive saving and reload',()=>{
+ const a=setup(true);a.run('state.projects[0].workflowColumns=[{key:"col-test-12345678",name:"验收",color:"#123456"}];state.tasks[0].workflowColumn="col-test-12345678";state.tasks[0].status="doing";state.tasks[0].progress=45;markDirty()');
+ const b=setup(true,a.stored());assert.equal(b.run('columnOf(state.tasks[0])'),'col-test-12345678');
+ b.run('toggleTaskCompletion(state.tasks[0],true)');assert.equal(b.run('state.tasks[0].status'),'done');
+ b.run('toggleTaskCompletion(state.tasks[0],false)');assert.equal(b.run('columnOf(state.tasks[0])'),'col-test-12345678');assert.equal(b.run('state.tasks[0].progress'),45);
+ const c=setup(true,b.stored());assert.equal(c.run('columnOf(state.tasks[0])'),'col-test-12345678');assert.equal(c.run('getColumns().find(x=>x.key==="col-test-12345678").color'),'#123456');
 });
 test('File names wrap to two lines, retain suffixes, escape markup and include the full hover title', () => {
   const a = setup(true); a.ctx.name = '特别长的项目名称'.repeat(25) + '.xlsx';
