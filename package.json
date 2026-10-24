@@ -1,7 +1,7 @@
 {
   "name": "project-progress-kanban",
   "productName": "项目进度看板",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "保留原有看板界面的本地项目管理与文件关联工具",
   "main": "app/main.cjs",
